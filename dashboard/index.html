@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Inference Bench — Apple Silicon Dashboard</title>
+  <meta name="description" content="Interactive benchmark dashboard for comparing LLM inference performance across Ollama, llama.cpp, and MLX on Apple Silicon Macs.">
+  <meta name="keywords" content="LLM, benchmark, Apple Silicon, MLX, llama.cpp, Ollama, inference, performance">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- ─── Header ──────────────────────────────────────── -->
+    <header class="header">
+      <div class="header__badge">
+        <span>Apple Silicon Benchmark</span>
+      </div>
+      <h1 class="header__title">LLM Inference Bench</h1>
+      <p class="header__subtitle">
+        Compare LLM inference performance across Ollama, llama.cpp &amp; MLX
+        with different quantization levels on Apple Silicon
+      </p>
+      <div class="header__chip" id="systemInfo">
+        M1 Pro · 16GB RAM · macOS 15.4
+      </div>
+    </header>
+
+    <!-- ─── Controls ────────────────────────────────────── -->
+    <div class="controls">
+      <div class="controls__group">
+        <span class="controls__label">Data</span>
+        <button class="controls__file-btn" id="loadSampleBtn">📊 Load Sample</button>
+        <button class="controls__file-btn" onclick="document.getElementById('fileInput').click()">
+          📁 Upload JSON
+        </button>
+        <input type="file" id="fileInput" accept=".json" style="display: none;">
+      </div>
+
+      <div class="controls__divider"></div>
+
+      <div class="controls__group">
+        <span class="controls__label">Filter</span>
+        <select class="controls__select" id="filterBackend">
+          <option value="all">All Backends</option>
+        </select>
+        <select class="controls__select" id="filterQuant">
+          <option value="all">All Quantizations</option>
+        </select>
+      </div>
+
+      <div class="controls__divider"></div>
+
+      <div class="controls__group">
+        <span class="controls__label">Export</span>
+        <button class="controls__file-btn" id="exportCsv">📄 CSV</button>
+        <button class="controls__file-btn" id="exportPng">🖼️ PNG</button>
+      </div>
+    </div>
+
+    <!-- ─── Upload Zone (shown when no data) ────────────── -->
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-zone__icon">📊</div>
+      <div class="upload-zone__text">
+        Drop a benchmark results JSON file here or click to browse
+      </div>
+      <div class="upload-zone__hint">
+        Or click "Load Sample" above to view demo data
+      </div>
+    </div>
+
+    <!-- ─── Dashboard Content (hidden until data loaded) ── -->
+    <div id="dashboardContent" class="hidden">
+
+      <!-- ─── Metric Summary Cards ──────────────────────── -->
+      <div class="metrics-grid">
+        <div class="metric-card metric-card--cyan" id="metricTps">
+          <div class="metric-card__icon">⚡</div>
+          <div class="metric-card__label">Best Throughput</div>
+          <div class="metric-card__value">— <span>tok/s</span></div>
+          <div class="metric-card__detail">Loading...</div>
+        </div>
+
+        <div class="metric-card metric-card--purple" id="metricTtft">
+          <div class="metric-card__icon">🎯</div>
+          <div class="metric-card__label">Fastest TTFT</div>
+          <div class="metric-card__value">— <span>ms</span></div>
+          <div class="metric-card__detail">Loading...</div>
+        </div>
+
+        <div class="metric-card metric-card--green" id="metricRam">
+          <div class="metric-card__icon">💾</div>
+          <div class="metric-card__label">Lowest RAM</div>
+          <div class="metric-card__value">— <span>MB</span></div>
+          <div class="metric-card__detail">Loading...</div>
+        </div>
+
+        <div class="metric-card metric-card--pink" id="metricQuality">
+          <div class="metric-card__icon">✨</div>
+          <div class="metric-card__label">Best Quality</div>
+          <div class="metric-card__value">— <span>/100</span></div>
+          <div class="metric-card__detail">Loading...</div>
+        </div>
+
+        <div class="metric-card metric-card--amber" id="metricConfigs">
+          <div class="metric-card__icon">🔧</div>
+          <div class="metric-card__label">Configurations</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__detail">Model × Runtime × Quant</div>
+        </div>
+
+        <div class="metric-card metric-card--red" id="metricRuns">
+          <div class="metric-card__icon">🏃</div>
+          <div class="metric-card__label">Total Runs</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__detail">Across all configs</div>
+        </div>
+      </div>
+
+      <!-- ─── Charts ────────────────────────────────────── -->
+      <section class="charts-section">
+        <h2 class="charts-section__title">📈 Performance Analysis</h2>
+
+        <div class="charts-grid">
+          <!-- Throughput -->
+          <div class="chart-card chart-card--tall">
+            <div class="chart-card__title">⚡ Tokens/Second (Decode Throughput)</div>
+            <div class="chart-card__wrap"><canvas id="chartThroughput"></canvas></div>
+          </div>
+
+          <!-- TTFT -->
+          <div class="chart-card">
+            <div class="chart-card__title">🎯 Time to First Token (TTFT)</div>
+            <div class="chart-card__wrap"><canvas id="chartTTFT"></canvas></div>
+          </div>
+
+          <!-- RAM -->
+          <div class="chart-card chart-card--tall">
+            <div class="chart-card__title">💾 Peak RAM Usage</div>
+            <div class="chart-card__wrap"><canvas id="chartRAM"></canvas></div>
+          </div>
+
+          <!-- Quality vs Speed -->
+          <div class="chart-card">
+            <div class="chart-card__title">✨ Quality vs Speed (bubble = RAM)</div>
+            <div class="chart-card__wrap"><canvas id="chartQualityVsSpeed"></canvas></div>
+          </div>
+
+          <!-- Radar -->
+          <div class="chart-card">
+            <div class="chart-card__title">🕸️ Multi-Metric Comparison (Top 5)</div>
+            <div class="chart-card__wrap"><canvas id="chartRadar"></canvas></div>
+          </div>
+
+          <!-- Load Time -->
+          <div class="chart-card">
+            <div class="chart-card__title">⏱️ Model Load Time</div>
+            <div class="chart-card__wrap"><canvas id="chartLoadTime"></canvas></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── Results Table ─────────────────────────────── -->
+      <section class="table-section">
+        <h2 class="charts-section__title">📋 Detailed Results</h2>
+
+        <div class="table-wrapper" style="overflow-x: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th data-sort="rank">#</th>
+                <th data-sort="backend">Backend</th>
+                <th data-sort="model">Model</th>
+                <th data-sort="quantization">Quant</th>
+                <th data-sort="size">Size</th>
+                <th data-sort="tps">Tok/s ↓</th>
+                <th data-sort="ttft">TTFT (ms)</th>
+                <th data-sort="ram">RAM (MB)</th>
+                <th data-sort="quality">Quality</th>
+                <th data-sort="load">Load</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody">
+              <tr>
+                <td colspan="10" class="empty-state">
+                  <div class="empty-state__icon">📊</div>
+                  <div>No data loaded yet</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div><!-- /dashboardContent -->
+
+    <!-- ─── Footer ──────────────────────────────────────── -->
+    <footer class="footer">
+      <p class="footer__text">
+        LLM Inference Bench v1.0.0 — Built for Apple Silicon by
+        <a href="https://github.com/saciducak" class="footer__link" target="_blank">Muhammed Sacid Ucak</a>
+      </p>
+      <p class="footer__text" style="margin-top: 4px; font-size: 0.75rem;">
+        Runtimes: Ollama · llama.cpp · MLX &nbsp;|&nbsp; Metrics: Throughput · TTFT · RAM · Quality
+      </p>
+    </footer>
+
+  </div><!-- /container -->
+
+  <!-- Scripts (order matters) -->
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

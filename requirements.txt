@@ -1,0 +1,9 @@
+# Core dependencies
+psutil>=5.9.0
+requests>=2.31.0
+tqdm>=4.65.0
+rich>=13.0.0
+
+# Optional: Inference backends (install based on your setup)
+# pip install llama-cpp-python    # For llama.cpp backend
+# pip install mlx-lm              # For MLX backend (Apple Silicon only)

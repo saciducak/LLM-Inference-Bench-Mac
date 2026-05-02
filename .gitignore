@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Model files (large)
+*.gguf
+*.bin
+*.safetensors
+models/
+
+# Results (keep sample)
+results/*.json
+!results/sample_results.json
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
