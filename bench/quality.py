@@ -73,7 +73,7 @@ def evaluate_quality(output: str, prompt: str, category: str,
     else:
         scores["turkish"] = 50
 
-    # 5. Relevance (0-100): No repetition/garbage
+    # 5. Relevance (0-100): No repetition/garbage (unigram)
     words = output.split()
     if len(words) > 5:
         unique_ratio = len(set(w.lower() for w in words)) / len(words)
@@ -81,10 +81,32 @@ def evaluate_quality(output: str, prompt: str, category: str,
     else:
         scores["relevance"] = 50
 
+    # 6. N-gram Repetition Penalty (0-100): Detect degenerate loops
+    scores["repetition"] = _ngram_repetition_score(output)
+
     # Composite: weighted average
-    weights = {"length": 0.15, "keywords": 0.25, "coherence": 0.25,
-               "turkish": 0.15, "relevance": 0.20}
+    weights = {"length": 0.10, "keywords": 0.25, "coherence": 0.20,
+               "turkish": 0.15, "relevance": 0.15, "repetition": 0.15}
     composite = sum(scores[k] * weights[k] for k in weights)
     scores["composite"] = min(100, composite)
 
     return scores
+
+
+def _ngram_repetition_score(text: str, n: int = 3) -> float:
+    """
+    Score text based on n-gram diversity (0-100).
+    High repetition of n-grams indicates degenerate output (looping).
+    Returns 100 for diverse text, 0 for highly repetitive text.
+    """
+    words = text.lower().split()
+    if len(words) < n + 1:
+        return 50.0  # Too short to evaluate
+
+    ngrams = [tuple(words[i:i+n]) for i in range(len(words) - n + 1)]
+    if not ngrams:
+        return 50.0
+
+    unique_ratio = len(set(ngrams)) / len(ngrams)
+    # Scale: 1.0 unique_ratio = 100, 0.3 = ~0
+    return min(100.0, max(0.0, (unique_ratio - 0.3) / 0.7 * 100))

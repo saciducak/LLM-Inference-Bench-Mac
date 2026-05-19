@@ -15,6 +15,7 @@ from .prompts import get_prompts, BenchmarkPrompt
 from .quality import evaluate_quality
 from .metrics import MemoryTracker, get_system_info, get_current_ram_mb
 from .backends.base import InferenceResult
+from .logger import setup_logger
 
 try:
     from rich.console import Console
@@ -36,6 +37,7 @@ class BenchmarkRunner:
         self.system_info = get_system_info()
         self.console = Console() if HAS_RICH else None
         self._backends = {}
+        self._logger = setup_logger(verbose=self.config.verbose)
 
     def _init_backends(self, runtimes: Optional[List[str]] = None):
         """Initialize available backends."""
@@ -277,12 +279,13 @@ class BenchmarkRunner:
 
         return {
             "metadata": {
-                "benchmark_version": "1.0.0",
+                "benchmark_version": "2.0.0",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "mode": self.config.mode.value,
                 "max_tokens": self.config.max_tokens,
                 "temperature": self.config.temperature,
                 "system": self.system_info.to_dict(),
+                "reproducibility": _get_reproducibility_info(),
             },
             "summaries": summaries,
             "raw_results": self.results,
@@ -339,3 +342,58 @@ class BenchmarkRunner:
                       f"{s['ttft_ms']['mean']:>7.0f} "
                       f"{s['peak_ram_mb']['mean']:>7.0f} "
                       f"{s['quality_score']['mean']:>5.0f}")
+
+
+# ─── Reproducibility Helpers ─────────────────────────────────────────────────
+
+def _get_reproducibility_info() -> Dict[str, Any]:
+    """Collect environment info for reproducibility."""
+    import subprocess as sp
+    info = {}
+
+    # Git commit hash
+    try:
+        result = sp.run(["git", "rev-parse", "--short", "HEAD"],
+                        capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            info["git_hash"] = result.stdout.strip()
+    except Exception:
+        pass
+
+    # Key package versions
+    try:
+        import importlib.metadata
+        packages = ["psutil", "requests", "rich"]
+        info["packages"] = {}
+        for pkg in packages:
+            try:
+                info["packages"][pkg] = importlib.metadata.version(pkg)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return info
+
+
+def _confidence_interval_95(values: List[float]) -> Optional[Dict[str, float]]:
+    """Calculate 95% confidence interval for a list of values."""
+    import math
+    n = len(values)
+    if n < 2:
+        return None
+    mean = statistics.mean(values)
+    std = statistics.stdev(values)
+    margin = 1.96 * (std / math.sqrt(n))
+    return {"lower": round(mean - margin, 2), "upper": round(mean + margin, 2)}
+
+
+def _coefficient_of_variation(values: List[float]) -> float:
+    """Calculate coefficient of variation (std/mean * 100)."""
+    if len(values) < 2:
+        return 0.0
+    mean = statistics.mean(values)
+    if mean == 0:
+        return 0.0
+    return round(statistics.stdev(values) / mean * 100, 1)
+

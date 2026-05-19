@@ -21,9 +21,13 @@ class SystemInfo:
     total_ram_gb: float = 0.0
     os_version: str = ""
     python_version: str = ""
+    gpu_cores: Optional[int] = None
+    neural_engine: bool = False
+    memory_bandwidth_gbps: Optional[float] = None
+    metal_support: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "chip": self.chip,
             "cpu_cores": self.cpu_cores,
             "cpu_brand": self.cpu_brand,
@@ -31,10 +35,21 @@ class SystemInfo:
             "os_version": self.os_version,
             "python_version": self.python_version,
         }
+        if self.gpu_cores:
+            d["gpu_cores"] = self.gpu_cores
+        if self.neural_engine:
+            d["neural_engine"] = True
+        if self.memory_bandwidth_gbps:
+            d["memory_bandwidth_gbps"] = self.memory_bandwidth_gbps
+        if self.metal_support:
+            d["metal_support"] = True
+        return d
 
 
 def get_system_info() -> SystemInfo:
     """Collect Apple Silicon system information."""
+    from .apple_metrics import get_apple_silicon_details, _detect_chip_generation
+
     info = SystemInfo()
     info.cpu_cores = psutil.cpu_count(logical=True)
     info.total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
@@ -47,31 +62,21 @@ def get_system_info() -> SystemInfo:
             ["sysctl", "-n", "machdep.cpu.brand_string"],
             capture_output=True, text=True, timeout=5)
         info.cpu_brand = result.stdout.strip()
-        # Extract chip name
-        brand = info.cpu_brand.lower()
-        if "m1" in brand:
-            if "pro" in brand: info.chip = "M1 Pro"
-            elif "max" in brand: info.chip = "M1 Max"
-            elif "ultra" in brand: info.chip = "M1 Ultra"
-            else: info.chip = "M1"
-        elif "m2" in brand:
-            if "pro" in brand: info.chip = "M2 Pro"
-            elif "max" in brand: info.chip = "M2 Max"
-            elif "ultra" in brand: info.chip = "M2 Ultra"
-            else: info.chip = "M2"
-        elif "m3" in brand:
-            if "pro" in brand: info.chip = "M3 Pro"
-            elif "max" in brand: info.chip = "M3 Max"
-            elif "ultra" in brand: info.chip = "M3 Ultra"
-            else: info.chip = "M3"
-        elif "m4" in brand:
-            if "pro" in brand: info.chip = "M4 Pro"
-            elif "max" in brand: info.chip = "M4 Max"
-            else: info.chip = "M4"
-        else:
+        info.chip = _detect_chip_generation()
+        if info.chip == "Unknown":
             info.chip = info.cpu_brand
     except Exception:
         info.chip = "Unknown Apple Silicon"
+
+    # Get Apple Silicon specific details
+    try:
+        details = get_apple_silicon_details()
+        info.gpu_cores = details.get("gpu_cores")
+        info.neural_engine = details.get("neural_engine", False)
+        info.memory_bandwidth_gbps = details.get("memory_bandwidth_gbps")
+        info.metal_support = details.get("metal_support", False)
+    except Exception:
+        pass
 
     return info
 
