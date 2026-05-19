@@ -1,104 +1,195 @@
 <div align="center">
-  <img src="assets/dashboard-top.png" alt="LLM Inference Bench Dashboard" width="100%" style="border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+  <img src="assets/dashboard-top.png" alt="LLM Inference Bench Dashboard" width="100%">
 
   <br>
   <h1>⚡ LLM Inference Bench — Apple Silicon</h1>
-  <p><b>An empirical approach to finding the sweet spot between Speed, RAM, and Quality on Mac</b></p>
+  <p>Apple Silicon Mac'lerde aynı modeli farklı runtime'larda ve quantization seviyelerinde karşılaştıran benchmark suite</p>
 
   <p>
-    <a href="https://github.com/saciducak/LLM-Inference-Bench-Mac/issues"><img src="https://img.shields.io/badge/Status-Active-success.svg?style=flat-square" alt="Status"></a>
+    <img src="https://img.shields.io/badge/Tests-59%20passed-success.svg?style=flat-square" alt="Tests">
     <img src="https://img.shields.io/badge/Platform-Apple_Silicon-000000.svg?style=flat-square&logo=apple" alt="Platform">
     <img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/CI-GitHub_Actions-2088FF.svg?style=flat-square&logo=github-actions&logoColor=white" alt="CI">
   </p>
 </div>
 
 ---
 
-## 👋 The Backstory: Why I Built This
+## Neden Bu Projeyi Yaptım?
 
-As an AI engineer working with local models on Apple Silicon, I realized I was spending too much time guessing. *"Should I use MLX or llama.cpp for this project? Is Q4_K_M really better than Q8_0 in terms of TTFT (Time to First Token)? How much does Turkish generation quality degrade at 4-bit?"*
+Apple Silicon'da yerel LLM çalıştırma seçenekleri artıyor — Ollama, llama.cpp, MLX. Ama "hangisi daha hızlı?", "quantization düşürdüğümde Türkçe kalitesi ne kadar bozuluyor?", "RAM ne kadar şişiyor?" gibi sorulara net cevap veren bir araç bulamadım.
 
-Instead of relying on Reddit threads or theoretical FLOPS, I decided to build a **data-driven benchmarking suite**. This project is a reflection of my engineering philosophy: **build the tools you need to measure what matters.** 
-
-It systematically tests the same prompts across different runtimes (Ollama, llama.cpp, MLX) and quantization levels, tracks the actual hardware metrics in the background, and visualizes the trade-offs on a premium local dashboard.
+Reddit thread'lerine güvenmek yerine kendim ölçmeye karar verdim. Bu proje o ölçümün sonucu: **aynı Türkçe prompt'ları, aynı modelin farklı versiyonlarında, 3 farklı runtime'da koşturup sonuçları karşılaştıran sistematik bir benchmark.**
 
 ---
 
-## 📊 Visualizing the Trade-offs
+## Ne Ölçüyor?
 
-Optimization is never a straight line. By tracking multiple metrics simultaneously, I was able to map out the exact Pareto frontiers for my M1 Pro machine.
+| Metrik | Açıklama |
+|--------|----------|
+| **Tokens/sec** | Decode throughput — modelin saniyede kaç token ürettiği |
+| **TTFT** | Time to First Token — kullanıcının ilk cevabı ne zaman gördüğü |
+| **Peak RAM** | İnference sırasında en yüksek bellek tüketimi |
+| **Quality Score** | 6 boyutlu Türkçe kalite değerlendirmesi (0-100) |
+| **Load Time** | Modelin belleğe yüklenme süresi |
+
+---
+
+## Dashboard
+
+Sonuçlar sadece terminalde kalmıyor — glassmorphism tasarımlı interaktif bir dashboard'da görselleştiriliyor.
 
 <div align="center">
-  <img src="assets/dashboard-charts.png" alt="Dashboard Charts" width="90%" style="border-radius: 8px;">
-  <p><i>Left: Peak RAM usage across quantizations. Right: Quality vs. Speed (Bubble size = RAM footprint).</i></p>
+  <img src="assets/dashboard-charts.png" alt="Analiz Grafikleri" width="90%">
+  <p><i>RAM kullanımı, Quality vs Speed scatter plot, radar karşılaştırma, model yükleme süreleri</i></p>
 </div>
-
-### Key Learnings During Development:
-1. **Apple's Unified Memory (UMA) is a beast:** By using MLX (`mlx-lm`), we achieve zero-copy memory access, drastically reducing load times and TTFT compared to traditional REST API overheads.
-2. **The Quantization "Sweet Spot":** For Turkish text generation, dropping down to Q2_K saves a ton of RAM but severely hurts coherence. 4-bit (MLX) and Q4_K_M (llama.cpp) consistently provided the best balance of Tokens/sec and Quality.
-3. **Quality Evaluation is Hard:** Speed doesn't matter if the model hallucinates. I had to build a custom deterministic NLP evaluator that specifically scores Turkish responses based on length, keywords, semantic coherence, and character density.
-
----
-
-## 📋 The Detailed Results View
-
-The suite doesn't just output terminal logs; it generates a structured JSON that feeds into a custom-built, glassmorphism UI for deep analysis.
 
 <div align="center">
-  <img src="assets/dashboard-results.png" alt="Detailed Results Table" width="90%" style="border-radius: 8px;">
+  <img src="assets/dashboard-results.png" alt="Sonuç Tablosu" width="90%">
+  <p><i>Sortable sonuç tablosu — backend, quant, tok/s, TTFT, RAM, kalite hepsi tek yerde</i></p>
 </div>
 
 ---
 
-## 🏗️ How It Works Under the Hood
+## Mimari
 
-I designed the architecture to be modular so I can easily plug in new backends as the ecosystem evolves.
+```
+CLI (run_benchmark.py)
+    │
+    ▼
+Orchestrator (runner.py)
+    │
+    ├── Backend Layer          ── Ollama (REST API)
+    │                          ── llama.cpp (Metal GPU)
+    │                          ── MLX (Apple Native)
+    │
+    ├── Telemetry Layer        ── MemoryTracker (async thread)
+    │                          ── Apple Silicon metrics
+    │
+    └── Evaluation Layer       ── Rule-based (6 boyut)
+                               ── LLM-as-a-Judge (opsiyonel)
+```
 
-* **Abstract Base Backend:** An `InferenceBackend` class ensures uniform metric collection whether we are hitting an Ollama REST API, running `llama-cpp-python` with Metal offload, or executing native `mlx`.
-* **Asynchronous Telemetry:** A `MemoryTracker` context manager spins up a background thread using `psutil` to sample Resident Set Size (RSS) peak memory during the exact inference window.
-* **Warmup Cycles:** The orchestrator enforces strict warmup runs to separate cold-start model I/O times from actual decode throughput.
-* **Vanilla JS Dashboard:** I wanted a beautiful UI without the overhead of React/Next.js for a simple local tool. The dashboard uses Chart.js, CSS variables, and pure JavaScript.
+**Önemli tasarım kararları:**
+
+- Her runtime bir `InferenceBackend` abstract class'ından türer — yeni bir runtime eklemek için ana kodu değiştirmeme gerek yok
+- RAM ölçümü arka planda ayrı bir thread'de saniyede 10 kez yapılıyor (`psutil` ile RSS sampling)
+- İlk ölçümden önce warmup çalıştırılıyor ki cold-start süresi gerçek inference hızını bozmasın
 
 ---
 
-## ⚡ Quick Start
+## Kalite Ölçümü
 
-Want to see how your Mac handles it?
+Hız önemli ama çıktı kalitesi düşükse bir anlamı yok. İki katmanlı bir değerlendirme sistemi kurdum:
 
-### 1. Setup
+**Kural Tabanlı (6 boyut):** API gerektirmez, deterministik, hızlı
+- Uzunluk, anahtar kelime eşleşmesi, cümle tutarlılığı, Türkçe karakter yoğunluğu, kelime çeşitliliği, n-gram tekrar tespiti
+
+**LLM-as-a-Judge (opsiyonel):** Semantik anlam değerlendirmesi
+- Ollama üzerinden küçük bir model hakemlik yapıyor
+- Halüsinasyon tespiti, olgusal doğruluk gibi regex'in yakalayamadığı şeyleri ölçüyor
+
+> Kural tabanlı sistem "klorofil" kelimesi geçtiği için puan verir — cümle "klorofil ile fotosentez yapılmaz" dese bile. Bu bilinen bir sınırlama ve LLM-as-a-Judge tam da bunu çözmek için eklendi.
+
+---
+
+## Quick Start
+
 ```bash
 git clone https://github.com/saciducak/LLM-Inference-Bench-Mac.git
 cd LLM-Inference-Bench-Mac
 
-# Install core dependencies
 pip install -r requirements.txt
 
-# Install runtimes (optional but recommended)
+# Runtimes (hangisini kullanıyorsan)
 pip install mlx-lm
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
 ```
 
-### 2. Run the Benchmark
 ```bash
-# Fast sanity check (1 prompt, 1 iteration)
+# Hızlı test
 python run_benchmark.py --quick --runtime ollama
 
-# Full evaluation suite
-python run_benchmark.py
-```
+# Tam benchmark
+python run_benchmark.py --full
 
-### 3. Launch the Dashboard
-```bash
+# Dashboard
 python run_benchmark.py --dashboard
 ```
 
 ---
 
-## 🚀 What's Next?
+## Test & CI
 
-This project was a fantastic deep dive into hardware-aware ML engineering. Moving forward, I plan to:
-- Integrate **vLLM** (once Apple Silicon support matures further).
-- Add energy consumption metrics (tracking Watts during generation).
-- Implement an automated LLM-as-a-judge for even more robust quality scoring.
+59 test, `pytest` ile:
 
-*If you're an AI engineer optimizing edge deployments, feel free to fork this or open a PR. Let's build better benchmarks!*
+```bash
+python -m pytest tests/ -v
+```
+
+```
+tests/test_quality.py    — 22 test (kalite ölçüm fonksiyonları)
+tests/test_backends.py   — 24 test (mock-based backend testleri)
+tests/test_runner.py     — 13 test (aggregation, istatistik)
+```
+
+GitHub Actions ile her push'ta macOS üzerinde otomatik çalışıyor (Python 3.10, 3.11, 3.12).
+
+---
+
+## Geliştirme Sürecinde Öğrendiklerim
+
+1. **UMA gerçekten fark yaratıyor.** MLX ile TTFT'ler Ollama'nın yarısına düştü çünkü CPU↔GPU arası veri kopyalama yok.
+2. **Q2_K kullanılabilir değil.** RAM çok tasarruflu ama Türkçe cümle yapısı ciddi bozuluyor. Sweet spot: 4-bit (MLX) veya Q4_K_M (llama.cpp).
+3. **Kalite ölçmek, hız ölçmekten çok daha zor.** Regex tabanlı başladım, n-gram repetition ekledim, sonunda LLM hakem modülünü yazmak zorunda kaldım.
+4. **Warmup olmadan benchmark çöp.** İlk prompt her zaman yavaş çünkü model daha RAM'e yükleniyor. Bunu ayıklamazsanız tüm veriler yanıltıcı olur.
+
+---
+
+## Tech Stack
+
+| Katman | Teknoloji |
+|--------|-----------|
+| Inference | `mlx-lm`, `llama-cpp-python`, Ollama REST API |
+| Bellek izleme | `psutil` + `threading` (async RSS sampling) |
+| Donanım tespiti | `sysctl`, `system_profiler` (GPU cores, Neural Engine, bandwidth) |
+| Kalite ölçümü | Kural tabanlı 6-boyut + LLM-as-a-Judge |
+| Dashboard | Vanilla JS, Chart.js, CSS3 (glassmorphism) |
+| CLI | `argparse` + `rich` (renkli tablolar, progress bar) |
+| Test | `pytest` (59 test), GitHub Actions CI |
+| Logging | `logging` modülü (konsol + dosya) |
+
+---
+
+## Proje Yapısı
+
+```
+├── bench/
+│   ├── backends/          # Ollama, llama.cpp, MLX backend'leri
+│   ├── apple_metrics.py   # Apple Silicon donanım detayları
+│   ├── config.py          # Model ve benchmark konfigürasyonu
+│   ├── logger.py          # Dual-handler logging
+│   ├── metrics.py         # MemoryTracker + SystemInfo
+│   ├── prompts.py         # Türkçe prompt kütüphanesi (5 kategori, 9 prompt)
+│   ├── quality.py         # 6-boyutlu kalite değerlendirici
+│   ├── quality_judge.py   # LLM-as-a-Judge modülü
+│   └── runner.py          # Benchmark orkestratörü
+├── dashboard/             # Glassmorphism UI (HTML/CSS/JS)
+├── tests/                 # 59 pytest testi
+├── results/               # Benchmark sonuçları (JSON)
+├── run_benchmark.py       # CLI entry point
+└── PROJECT_DEEP_DIVE.md   # Detaylı mimari doküman
+```
+
+---
+
+## Roadmap
+
+- [ ] Energy profiling — `powermetrics` ile Watt/1000 token ölçümü
+- [ ] Concurrency test — `asyncio` ile eşzamanlı yük testi
+- [ ] Needle-in-a-Haystack — uzun context KV Cache degradasyon testi
+- [ ] Cross-device comparison — farklı Mac'lerden sonuç karşılaştırma
+
+---
+
+*Detaylı mimari doküman için → [PROJECT_DEEP_DIVE.md](PROJECT_DEEP_DIVE.md)*
